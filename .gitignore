@@ -19,3 +19,14 @@
 *.exe
 *.out
 *.app
+
+# Make files 
+Makefile
+
+# CMake files
+CMakeCache.txt
+cmake_install.cmake
+CMakeFiles/
+
+# Binary files 
+sample_program
