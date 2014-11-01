@@ -9,6 +9,15 @@
 using namespace cv;
 
 
+float clipImg(float value, float lower, float upper);
+
+
+float sRGBCompanding(float value);
+
+
+float sRGBInverseCompanding(float value);
+
+
 void conversion(const Mat& original, Mat& result, const Mat& matrix,
                 int rows, int cols);
 
@@ -23,6 +32,31 @@ void LabtoLMS(const Mat& labImg, Mat& lmsImg);
 
 
 void LMStoBGR(const Mat& lmsImg, Mat& bgrImg);
+
+
+void BGRtoYUV(const Mat& bgrImg, Mat& yuvImg);
+
+
+bool computeBGRWhitePoint(const Mat& bgrImg, Mat& whitePoint,
+                          Mat& previuosWhitePoint);
+
+
+void XYZtoxy(const Mat& XYZImg, Mat& xyImg);
+
+
+void xytoXYZ(const Mat& xyImg, float maxLuminance, Mat& XYZImg);
+
+
+void getRGBtoXYZMatrix(const Mat& whitePoint, Mat& RGBtoXYZMatrix);
+
+
+void BGRtoXYZWhitePoint(Mat& bgrImg, const Mat& whitePoint, Mat& xyzImg);
+
+
+void adaptXYZToNewWhitePoint(Mat& XYZWhitePoint, const Mat& BGRWhitePoint);
+
+
+void CAT(Mat& bgrImg, Mat& inpWhitePoint, const Mat& tarWhitePoint);
 
 
 #endif
