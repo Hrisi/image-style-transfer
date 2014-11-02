@@ -1,16 +1,17 @@
 #include <MongeTransform.h>
 #include <cmath>
-
 #define PI 3.14159265
 #define VALUES_RANGE 256
+
+typedef std::map <float, float> Map;
 
 
 void computeHue(const Mat& img, Mat& hue, int chAInd, int chBInd){
   for (int i = 0; i < img.rows; i++){
     for (int j = 0; j < img.cols; j++){
       hue.at<float>(i, j) = float(180) / PI * atan2(
-        int(img.at<Vec3b>(i, j)[chBInd]) - 128,
-        int(img.at<Vec3b>(i, j)[chAInd]) - 128);
+        img.at<Vec3f>(i, j)[chBInd] - 128,
+        img.at<Vec3f>(i, j)[chAInd] - 128);
 
       hue.at<float>(i, j) = (hue.at<float>(i, j) < 0) ?
                             (hue.at<float>(i, j) + 360) : hue.at<float>(i, j);
@@ -20,27 +21,17 @@ void computeHue(const Mat& img, Mat& hue, int chAInd, int chBInd){
   }
 }
 
-// for now, implementation only for 2x2 matrices
+// for now, implementation only for square matrices
 void dotProduct(const Mat& matrix1, const Mat& matrix2, Mat& matrixProduct){
-  matrixProduct.at<float>(0, 0) = matrix1.at<float>(0, 0) *
-                                  matrix2.at<float>(0, 0) +
-                                  matrix1.at<float>(0, 1) *
-                                  matrix2.at<float>(1, 0);
-
-  matrixProduct.at<float>(0, 1) = matrix1.at<float>(0, 0) *
-                                  matrix2.at<float>(0, 1) +
-                                  matrix1.at<float>(0, 1) *
-                                  matrix2.at<float>(1, 1);
-
-  matrixProduct.at<float>(1, 0) = matrix1.at<float>(1, 0) *
-                                  matrix2.at<float>(0, 0) +
-                                  matrix1.at<float>(1, 1) *
-                                  matrix2.at<float>(1, 0);
-
-  matrixProduct.at<float>(1, 1) = matrix1.at<float>(1, 0) *
-                                  matrix2.at<float>(0, 1) +
-                                  matrix1.at<float>(1, 1) *
-                                  matrix2.at<float>(1, 1);
+  for (int i = 0; i < matrix1.rows; i++){
+    for (int j = 0; j < matrix1.cols; j++){
+      matrixProduct.at<float>(i, j) = 0;
+      for (int k = 0; k < matrix1.rows; k++){
+        matrixProduct.at<float>(i, j) += matrix1.at<float>(i, k) *
+                                         matrix2.at<float>(k, j);
+      }
+    }
+  }
 }
 
 
@@ -64,12 +55,13 @@ void matrixSquareRoot(const Mat& matrix, Mat& squareRoot){
 
 float computeMean(const Mat& imgChannel){
   float mean = 0.0;
-  int size = imgChannel.rows * imgChannel.cols;
+  int size = 0;
 
   for (int i = 0; i < imgChannel.rows; i++){
     for (int j = 0; j < imgChannel.cols; j++){
       if (!std::isnan(imgChannel.at<float>(i, j))){
         mean += imgChannel.at<float>(i, j);
+        size++;
       }
     }
   }
@@ -84,32 +76,31 @@ float computeWeightedMean(const Mat& imgChannel){
   float weightedMean = 0.0;
   float sumWeights = 0.0;
   float sumMeans = 0.0;
-  int size = imgChannel.rows * imgChannel.cols;
-  float* weights = new float[VALUES_RANGE];
-  int* freqCounter = new int[VALUES_RANGE];
-
-  for (int i = 0; i < VALUES_RANGE; i++){
-    freqCounter[i] = 0;
-  }
+  int size = 0;
+  Map freqCounter;
 
   for (int i = 0; i < imgChannel.rows; i++){
     for (int j = 0; j < imgChannel.cols; j++){
-      if (!std::isnan(imgChannel.at<float>(i, j))){
-        freqCounter[int(imgChannel.at<uchar>(i, j))] ++;
+      float key = imgChannel.at<float>(i, j);
+      if (!std::isnan(key)){
+        if (freqCounter.count(round(key)) == 0){
+          freqCounter[round(key)] = 1;
+        }
+        else{
+          freqCounter[round(key)]++;
+        }
+      size++;
       }
     }
   }
 
-  for (int i = 0; i < VALUES_RANGE; i++){
-      weights[i] = float(freqCounter[i]) / size;
-  }
-
   for (int i = 0; i < imgChannel.rows; i++){
     for (int j = 0; j < imgChannel.cols; j++){
-      if (!std::isnan(imgChannel.at<float>(i, j))){
-        sumMeans += (weights[int(imgChannel.at<uchar>(i, j))] *
-          imgChannel.at<float>(i, j));
-        sumWeights += weights[int(imgChannel.at<uchar>(i, j))];
+      float key = imgChannel.at<float>(i, j);
+      if (!std::isnan(key)){
+          float weight = freqCounter[round(key)] / float(size);
+          sumMeans += weight * key;
+          sumWeights += weight;
       }
     }
   }
@@ -134,17 +125,19 @@ float computeCovarianceElement(const Mat& channelA, const Mat& channelB){
   float meanB = computeMean(channelB);
   float sumMeans = 0.0;
   float covar;
+  int size = 0;
 
   for (int i = 0; i < channelA.rows; i++){
     for (int j = 0; j < channelA.cols; j++){
       if (!std::isnan(channelA.at<float>(i, j))){
-         sumMeans += (float(channelA.at<float>(i, j)) - meanA) *
-                     (float(channelB.at<float>(i, j)) - meanB);
+         sumMeans += (channelA.at<float>(i, j) - meanA) *
+                     (channelB.at<float>(i, j) - meanB);
+         size++;
       }
     }
   }
 
-  covar = float(sumMeans) / (channelA.rows * channelA.cols - 1);
+  covar = float(sumMeans) / (size - 1);
 
   return covar;
 }
@@ -161,6 +154,7 @@ void computeCovariance(const Mat& img, Mat& imgCovMatrix){
   imgCovMatrix.at<float>(0, 1) = computeCovarianceElement(channels[2],
                                                           channels[1]);
   imgCovMatrix.at<float>(1, 0) = imgCovMatrix.at<float>(0, 1);
+  std::cout << "end" << std::endl;
 }
 
 
@@ -193,11 +187,11 @@ void computeMapping(const Mat& inpImg, const Mat& tarImg,
     for (int j = 0; j < inpImg.cols; j++){
       for (int k = 0; k < 2; k++){
         newValues.at<Vec2f>(i, j)[k] =
-          (std::isnan(float(inpImg.at<Vec3f>(i, j)[k]))) ? NAN :
+          (std::isnan(inpImg.at<Vec3f>(i, j)[k])) ? NAN :
            (matrixT.at<float>(k, 0) *
-           (float(inpImg.at<Vec3f>(i, j)[k + 1]) - inpMeans[0]) +
+           (inpImg.at<Vec3f>(i, j).val[1] - inpMeans[0]) +
            matrixT.at<float>(k, 1) *
-           (float(inpImg.at<Vec3f>(i, j)[k + 1]) - inpMeans[1]) + tarMeans[k]);
+           (inpImg.at<Vec3f>(i, j).val[2] - inpMeans[1]) + tarMeans[k]);
       }
     }
   }
@@ -209,6 +203,7 @@ void applyTransform(const Mat& inpImg, const Mat& tarImg, Mat& newValues,
   Mat mu;
   Mat inpCovMatrix = Mat(2, 2, CV_32F);
   Mat tarCovMatrix = Mat(2, 2, CV_32F);
+
 
   computeCovariance(inpImg, inpCovMatrix);
   computeCovariance(tarImg, tarCovMatrix);
