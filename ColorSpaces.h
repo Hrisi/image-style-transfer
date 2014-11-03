@@ -22,19 +22,19 @@ void conversion(const Mat& original, Mat& result, const Mat& matrix,
                 int rows, int cols);
 
 
-void BGRtoLMS(const Mat& bgrImg, Mat& lmsImg);
+void convertBGRtoLMS(Mat& bgrImg, Mat& lmsImg);
 
 
-void LMStoLab(const Mat& lmsImg, Mat& labImg);
+void convertLMStoLab(const Mat& lmsImg, Mat& labImg);
 
 
-void LabtoLMS(const Mat& labImg, Mat& lmsImg);
+void convertLabtoLMS(const Mat& labImg, Mat& lmsImg);
 
 
-void LMStoBGR(const Mat& lmsImg, Mat& bgrImg);
+void convertLMStoBGR(const Mat& lmsImg, Mat& bgrImg);
 
 
-void BGRtoYUV(const Mat& bgrImg, Mat& yuvImg);
+void convertBGRtoYUV(const Mat& bgrImg, Mat& yuvImg);
 
 
 bool computeBGRGrayWhitePoint(const Mat& bgrImg, Mat& whitePoint,

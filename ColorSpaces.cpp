@@ -36,42 +36,48 @@ float sRGBInverseCompanding(float value){
 
 void conversion(const Mat& original, Mat& result, const Mat& matrix,
                 int rows, int cols){
-  for (int k = 0; k < 3; k++){
-    for (int i = 0; i < rows; i++){
-      for (int j = 0; j < cols; j++){
-        result.at<Vec3f>(i, j)[k] = matrix.at<float>(k, 0) *
-                                    float(original.at<Vec3f>(i, j)[0]) +
-                                    matrix.at<float>(k, 1) *
-                                    float(original.at<Vec3f>(i, j)[1]) +
-                                    matrix.at<float>(k, 2) *
-                                    float(original.at<Vec3f>(i, j)[2]);
+  for (int i = 0; i < rows; i++){
+    for (int j = 0; j < cols; j++){
+      float channel1 =  original.at<Vec3f>(i, j).val[0];
+      float channel2 =  original.at<Vec3f>(i, j).val[1];
+      float channel3 =  original.at<Vec3f>(i, j).val[2];
+
+      for (int k = 0; k < 3; k++){
+        result.at<Vec3f>(i, j).val[k] = matrix.at<float>(k, 0) * channel1 +
+                                        matrix.at<float>(k, 1) * channel2 +
+                                        matrix.at<float>(k, 2) * channel3;
       }
     }
   }
 }
 
 
-void BGRtoLMS(const Mat& bgrImg, Mat& lmsImg){
+void convertBGRtoLMS(Mat& bgrImg, Mat& lmsImg){
   Mat matrix = (Mat_<float>(3, 3) << 0.3811, 0.5783, 0.0402,
                                      0.1967, 0.7244, 0.0782,
                                      0.0241, 0.1288, 0.8444);
 
-  for (int k = 0; k < 3; k++){
-    for (int i = 0; i < bgrImg.rows; i++){
-      for (int j = 0; j < bgrImg.cols; j++){
-        lmsImg.at<Vec3f>(i, j)[k] = log10(matrix.at<float>(k, 0) *
-                                          float(bgrImg.at<Vec3b>(i, j)[2]) / 255 +
-                                          matrix.at<float>(k, 1) *
-                                          float(bgrImg.at<Vec3b>(i, j)[1]) / 255+
-                                          matrix.at<float>(k, 2) *
-                                          float(bgrImg.at<Vec3b>(i, j)[0]) / 255);
+  for (int i = 0; i < bgrImg.rows; i++){
+    for (int j = 0; j < bgrImg.cols; j++){
+      float r = bgrImg.at<Vec3f>(i, j).val[2];
+      float g = bgrImg.at<Vec3f>(i, j).val[1];
+      float b = bgrImg.at<Vec3f>(i, j).val[0];
+
+      bgrImg.at<Vec3f>(i, j).val[0] = sRGBInverseCompanding(b);
+      bgrImg.at<Vec3f>(i, j).val[1] = sRGBInverseCompanding(g);
+      bgrImg.at<Vec3f>(i, j).val[2] = sRGBInverseCompanding(r);
+
+      for (int k = 0; k < 3; k++){
+        lmsImg.at<Vec3f>(i, j).val[k] = log10(matrix.at<float>(k, 0) * r +
+                                              matrix.at<float>(k, 1) * g +
+                                              matrix.at<float>(k, 2) * b);
       }
     }
   }
 }
 
 
-void LMStoLab(const Mat& lmsImg, Mat& labImg){
+void convertLMStoLab(const Mat& lmsImg, Mat& labImg){
   Mat base1 = (Mat_<float>(3, 3) << 0.57735026918, 0, 0,
                                     0, 0.40824829046, 0,
                                     0, 0, 0.70710678118);
@@ -80,12 +86,13 @@ void LMStoLab(const Mat& lmsImg, Mat& labImg){
                                     1, -1, 0);
   Mat matrix = Mat(3, 3, CV_32F);
   dotProduct(base1, base2, matrix);
+  std::cout << matrix << std::endl;
 
   conversion(lmsImg, labImg, matrix, lmsImg.rows, lmsImg.cols);
 }
 
 
-void LabtoLMS(const Mat& labImg, Mat& lmsImg){
+void convertLabtoLMS(const Mat& labImg, Mat& lmsImg){
   Mat base1 = (Mat_<float>(3, 3) << 1, 1, 1,
                                     1, 1, -1,
                                     1, -2, 0);
@@ -94,53 +101,61 @@ void LabtoLMS(const Mat& labImg, Mat& lmsImg){
                                     0, 0, 0.7071067811);
   Mat matrix = Mat(3, 3, CV_32F);
   dotProduct(base1, base2, matrix);
+  std::cout << matrix << std::endl;
 
   conversion(labImg, lmsImg, matrix, lmsImg.rows, lmsImg.cols);
 
-  for (int k = 0; k < 3; k++){
-    for (int i = 0; i < lmsImg.rows; i++){
-      for (int j = 0; i < lmsImg.rows; i++){
-        lmsImg.at<Vec3b>(i, j)[k] = pow(float(lmsImg.at<Vec3b>(i, j)[k]), 10);
+  for (int i = 0; i < lmsImg.rows; i++){
+    for (int j = 0; i < lmsImg.cols; i++){
+      for (int k = 0; k < 3; k++){
+        lmsImg.at<Vec3f>(i, j).val[k] = pow(lmsImg.at<Vec3f>(i, j).val[k], 10);
       }
     }
   }
 }
 
 
-void LMStoBGR(const Mat& lmsImg, Mat& bgrImg){
+void convertLMStoBGR(const Mat& lmsImg, Mat& bgrImg){
   Mat matrix = (Mat_<float>(3, 3) << 4.4679, -3.5873, 0.1193,
                                     -1.2186, 2.3809, -0.1624,
                                     0.0497, -0.2439, 1.2045);
 
-  for (int k = 0; k < 3; k++){
-    for (int i = 0; i < bgrImg.rows; i++){
-      for (int j = 0; j < bgrImg.cols; j++){
-        bgrImg.at<Vec3b>(i, j)[2 - k] = (matrix.at<float>(k, 0) *
-                                        float(lmsImg.at<Vec3f>(i, j)[0]) +
-                                        matrix.at<float>(k, 1) *
-                                        float(lmsImg.at<Vec3f>(i, j)[1]) +
-                                        matrix.at<float>(k, 2) *
-                                        float(lmsImg.at<Vec3f>(i, j)[2])) * 255;
+  for (int i = 0; i < bgrImg.rows; i++){
+    for (int j = 0; j < bgrImg.cols; j++){
+      float l = lmsImg.at<Vec3f>(i, j).val[0];
+      float m = lmsImg.at<Vec3f>(i, j).val[1];
+      float s = lmsImg.at<Vec3f>(i, j).val[2];
+
+      for (int k = 0; k < 3; k++){
+        bgrImg.at<Vec3f>(i, j).val[2 - k] = matrix.at<float>(k, 0) * l +
+                                            matrix.at<float>(k, 1) * m +
+                                            matrix.at<float>(k, 2) * s;
+        bgrImg.at<Vec3f>(i, j).val[2 - k] =
+          sRGBCompanding(bgrImg.at<Vec3f>(i, j).val[2 - k]);
+        //std::cout << bgrImg << std::cout;
+        //bgrImg.at<Vec3f>(i, j)[2 - k] =
+        //  clipImg(bgrImg.at<Vec3f>(i, j).val[2 - k], 0, 1);
       }
     }
   }
 }
 
 
-void BGRtoYUV(const Mat& bgrImg, Mat& yuvImg){
+void convertBGRtoYUV(const Mat& bgrImg, Mat& yuvImg){
   Mat matrix = (Mat_<float>(3, 3) << 0.299, 0.587, 0.114,
                                      -0.229, -0.587, 0.886,
                                      0.701, -0.587, -0.114);
 
-  for (int k = 0; k < 3; k++){
-    for (int i = 0; i < bgrImg.rows; i++){
-      for (int j = 0; j < bgrImg.cols; j++){
-        yuvImg.at<Vec3f>(i, j).val[k] = (matrix.at<float>(k, 0) *
-                                         bgrImg.at<Vec3f>(i, j).val[2] +
-                                         matrix.at<float>(k, 1) *
-                                         bgrImg.at<Vec3f>(i, j).val[1] +
-                                         matrix.at<float>(k, 2) *
-                                         bgrImg.at<Vec3f>(i, j).val[0]);
+  for (int i = 0; i < bgrImg.rows; i++){
+    for (int j = 0; j < bgrImg.cols; j++){
+      float r = bgrImg.at<Vec3f>(i, j).val[2];
+      float g = bgrImg.at<Vec3f>(i, j).val[1];
+      float b = bgrImg.at<Vec3f>(i, j).val[0];
+
+      for (int k = 0; k < 3; k++){
+        yuvImg.at<Vec3f>(i, j).val[k] = matrix.at<float>(k, 0) * r +
+                                        matrix.at<float>(k, 1) * g +
+                                        matrix.at<float>(k, 2) * b;
       }
     }
   }
@@ -160,7 +175,7 @@ bool computeBGRGrayWhitePoint(const Mat& bgrImg, Mat& whitePoint,
 
   Mat yuvImg = Mat(bgrImg.rows, bgrImg.cols, CV_32FC3);
 
-  BGRtoYUV(bgrImg, yuvImg);
+  convertBGRtoYUV(bgrImg, yuvImg);
 
   for (int i = 0; i < yuvImg.rows; i++){
     for (int j = 0; j < yuvImg.cols; j++){
