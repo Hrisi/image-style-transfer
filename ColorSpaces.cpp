@@ -7,6 +7,8 @@
 using namespace cv;
 
 #define GREY_THRESHOLD 0.3
+#define EPS 0.008856
+#define K 903.3
 
 
 float clipImg(float value, float lower, float upper){
@@ -18,9 +20,8 @@ float sRGBCompanding(float value){
   if (value <= 0.0031308){
     return value * 12.92;
   }
-  else{
-    return 1.055 * pow(value, 1.0 / 2.4) - 0.055;
-  }
+
+  return 1.055 * pow(value, 1.0 / 2.4) - 0.055;
 }
 
 
@@ -28,9 +29,8 @@ float sRGBInverseCompanding(float value){
   if (value <= 0.04045){
     return value / 12.92;
   }
-  else{
-    return pow((value + 0.055)/ 1.055, 2.4);
-  }
+  
+  return pow((value + 0.055)/ 1.055, 2.4);
 }
 
 
@@ -144,90 +144,63 @@ void BGRtoYUV(const Mat& bgrImg, Mat& yuvImg){
       }
     }
   }
-  //std::cout << yuvImg << std::endl;
 }
 
 
-bool computeBGRWhitePoint(const Mat& bgrImg, Mat& whitePoint,
-                          Mat& previousWhitePoint){
-  float sum[3] = {0, 0, 0};
-  int cnt = 0;
+bool computeBGRGrayWhitePoint(const Mat& bgrImg, Mat& whitePoint,
+                              Mat& prevYUVWhitePoint){
+  float sumElementsByChannel[2] = {0, 0};
+  int cntElm = 0;
   Mat matrix = (Mat_<float>(3, 3) << 0.299, 0.587, 0.114,
                                      -0.229, -0.587, 0.886,
                                      0.701, -0.587, -0.114);
-  Mat invMatrix = matrix.inv();
-  std::cout << invMatrix << std::endl;
-  Mat tmpWhitePoint = Mat(1, 1, CV_32FC3);
 
-  Mat bgrImgNonNorm = Mat(bgrImg.rows, bgrImg.cols, CV_32FC3);
-  for (int i = 0; i < bgrImg.rows; i++){
-    for (int j = 0; j < bgrImg.cols; j++){
-      for(int k = 0; k < 3; k++){
-        bgrImgNonNorm.at<Vec3f>(i, j).val[k] = 
-          bgrImg.at<Vec3f>(i, j).val[k] * 255.0;
-      }
-    }
-  }
+  Mat invMatrix = matrix.inv();
+  Mat curYUVWhitePoint = Mat(1, 1, CV_32FC3);
 
   Mat yuvImg = Mat(bgrImg.rows, bgrImg.cols, CV_32FC3);
 
   BGRtoYUV(bgrImg, yuvImg);
-  //std::cout << yuvImg << std::endl;
 
-  Mat gray = Mat::zeros(bgrImg.rows, bgrImg.cols, CV_32F);
-  float maxLum = yuvImg.at<Vec3f>(0, 0).val[0];
   for (int i = 0; i < yuvImg.rows; i++){
     for (int j = 0; j < yuvImg.cols; j++){
-      if (maxLum < yuvImg.at<Vec3f>(i, j).val[0]){
-        maxLum = yuvImg.at<Vec3f>(i, j).val[0];
-      }
-      float ratio = (abs(yuvImg.at<Vec3f>(i, j).val[1]) +
-        abs(yuvImg.at<Vec3f>(i, j).val[2])) / yuvImg.at<Vec3f>(i, j).val[0];
+      float y = yuvImg.at<Vec3f>(i, j).val[0];
+      float u = yuvImg.at<Vec3f>(i, j).val[1];
+      float v = yuvImg.at<Vec3f>(i, j).val[2];
+      float ratio = (abs(u) + abs(v)) / y;
       if (ratio < GREY_THRESHOLD){
-        sum[0] += yuvImg.at<Vec3f>(i, j).val[0];
-        sum[1] += yuvImg.at<Vec3f>(i, j).val[1];
-        sum[2] += yuvImg.at<Vec3f>(i, j).val[2];
-        cnt++;
-        gray.at<float>(i, j) = 100;
+        sumElementsByChannel[0] += u;
+        sumElementsByChannel[1] += v;
+        cntElm++;
       }
     }
   }
-  //namedWindow("Display Image", WINDOW_AUTOSIZE );
-  //imshow("Display Image", gray);
 
-  //waitKey(0);
-
-
-  tmpWhitePoint.at<Vec3f>(0, 0).val[0] = 1;//sum[0] / cnt;
-  tmpWhitePoint.at<Vec3f>(0, 0).val[1] = sum[1] / cnt;
-  tmpWhitePoint.at<Vec3f>(0, 0).val[2] = sum[2] / cnt;
+  curYUVWhitePoint.at<Vec3f>(0, 0).val[0] = 1;
+  curYUVWhitePoint.at<Vec3f>(0, 0).val[1] = sumElementsByChannel[0] / cntElm;
+  curYUVWhitePoint.at<Vec3f>(0, 0).val[2] = sumElementsByChannel[1] / cntElm;
 
   // termination criteria
-  float norm = sqrt(
-    (previousWhitePoint.at<Vec3f>(0, 0).val[1] - tmpWhitePoint.at<Vec3f>(0, 0).val[1]) *
-    (previousWhitePoint.at<Vec3f>(0, 0).val[1] - tmpWhitePoint.at<Vec3f>(0, 0).val[1]) +
-    (previousWhitePoint.at<Vec3f>(0, 0).val[2] - tmpWhitePoint.at<Vec3f>(0, 0).val[2]) *
-    (previousWhitePoint.at<Vec3f>(0, 0).val[2] - tmpWhitePoint.at<Vec3f>(0, 0).val[2]));
-  if (!std::isnan(previousWhitePoint.at<Vec3f>(0, 0).val[1]) &&
-      (norm < pow(10, -6) ||
-      std::max(abs(tmpWhitePoint.at<Vec3f>(0, 0).val[1]),
-               abs(tmpWhitePoint.at<Vec3f>(0, 0).val[2])) < 0.001)){
+  float curY = curYUVWhitePoint.at<Vec3f>(0, 0).val[0];
+  float curU = curYUVWhitePoint.at<Vec3f>(0, 0).val[1];
+  float curV = curYUVWhitePoint.at<Vec3f>(0, 0).val[2];
+  float prevU = prevYUVWhitePoint.at<Vec3f>(0, 0).val[1];
+  float prevV = prevYUVWhitePoint.at<Vec3f>(0, 0).val[2];
+  float norm = sqrt(pow(curU - prevU, 2) + pow(curV - prevV, 2));
+
+  if (!std::isnan(prevU) && (norm < pow(10, -6) ||
+                             std::max(abs(curU), abs(curV)) < 0.001)){
     return true;
   }
 
-  for (int k = 0; k < 3; k++){
-    previousWhitePoint.at<Vec3f>(0, 0).val[k] = tmpWhitePoint.at<Vec3f>(0, 0).val[k];
-  }
+  prevYUVWhitePoint.at<Vec3f>(0, 0).val[0] = curY;
+  prevYUVWhitePoint.at<Vec3f>(0, 0).val[1] = curU;
+  prevYUVWhitePoint.at<Vec3f>(0, 0).val[2] = curV;
   
   for (int i = 0; i < 3; i++){
-    std::cout << "importa!!!!!!!!!! " << tmpWhitePoint << std::endl;
-    whitePoint.at<Vec3f>(0, 0).val[2 - i] = (invMatrix.at<float>(i, 0) *
-                                             tmpWhitePoint.at<Vec3f>(0, 0).val[0] +
-                                             invMatrix.at<float>(i, 1) *
-                                             tmpWhitePoint.at<Vec3f>(0, 0).val[1] +
-                                             invMatrix.at<float>(i, 2) *
-                                             tmpWhitePoint.at<Vec3f>(0, 0).val[2]);
-    std::cout << "importa!!!!!! " << whitePoint << std::endl;
+    whitePoint.at<Vec3f>(0, 0).val[2 - i] = invMatrix.at<float>(i, 0) * curY +
+                                            invMatrix.at<float>(i, 1) * curU +
+                                            invMatrix.at<float>(i, 2) * curV;
     whitePoint.at<Vec3f>(0, 0).val[2 - i] =
       clipImg(whitePoint.at<Vec3f>(0, 0).val[2 - i], 0, 1);
   }
@@ -257,7 +230,14 @@ void xytoXYZ(const Mat& xyImg, float maxLuminance, Mat& XYZImg){
 }
 
 
-void getRGBtoXYZMatrix(const Mat& whitePoint, Mat& RGBtoXYZMatrix){
+float product(const Mat& whitePoint, const Mat& invMatrix, int k){
+  return invMatrix.at<float>(k, 0) * whitePoint.at<Vec3f>(0, 0).val[0] +
+         invMatrix.at<float>(k, 1) * whitePoint.at<Vec3f>(0, 0).val[1] +
+         invMatrix.at<float>(k, 2) * whitePoint.at<Vec3f>(0, 0).val[2]; 
+}
+
+
+void getRGBtoXYZMatrix(Mat& whitePoint, Mat& RGBtoXYZMatrix){
   // using the sRGB chromaticity coordinates
   float xR = 0.64;
   float yR = 0.33;
@@ -286,17 +266,11 @@ void getRGBtoXYZMatrix(const Mat& whitePoint, Mat& RGBtoXYZMatrix){
   Mat invMatrix = matrix.inv();
   
   float sR, sG, sB;
-  sR = invMatrix.at<float>(0, 0) * whitePoint.at<Vec3f>(0, 0).val[0] +
-       invMatrix.at<float>(0, 1) * whitePoint.at<Vec3f>(0, 0).val[1] +
-       invMatrix.at<float>(0, 2) * whitePoint.at<Vec3f>(0, 0).val[2];
+  sR = product(whitePoint, invMatrix, 0);
 
-  sG = invMatrix.at<float>(1, 0) * whitePoint.at<Vec3f>(0, 0).val[0] +
-       invMatrix.at<float>(1, 1) * whitePoint.at<Vec3f>(0, 0).val[1] +
-       invMatrix.at<float>(1, 2) * whitePoint.at<Vec3f>(0, 0).val[2];
+  sG = product(whitePoint, invMatrix, 1);
 
-  sB = invMatrix.at<float>(2, 0) * whitePoint.at<Vec3f>(0, 0).val[0] +
-       invMatrix.at<float>(2, 1) * whitePoint.at<Vec3f>(0, 0).val[1] +
-       invMatrix.at<float>(2, 2) * whitePoint.at<Vec3f>(0, 0).val[2];
+  sB = product(whitePoint, invMatrix, 2);
 
   RGBtoXYZMatrix = (Mat_<float>(3, 3) << sR * XR, sG * XG, sB * XB,
                                          sR * YR, sG * YG, sB * YB,
@@ -304,7 +278,7 @@ void getRGBtoXYZMatrix(const Mat& whitePoint, Mat& RGBtoXYZMatrix){
 }
 
 
-void BGRtoXYZWhitePoint(Mat& bgrImg, const Mat& whitePoint, Mat& xyzImg){
+void convertBGRtoXYZ(Mat& bgrImg, Mat& whitePoint, Mat& xyzImg){
   Mat M = Mat(3, 3, CV_32F);
   getRGBtoXYZMatrix(whitePoint, M);
 
@@ -325,6 +299,29 @@ void BGRtoXYZWhitePoint(Mat& bgrImg, const Mat& whitePoint, Mat& xyzImg){
 }
 
 
+void convertXYZtoBGR(const Mat& xyzImg, Mat& XYZWhitePoint, Mat& bgrImg){
+  Mat matXYZtoLab = Mat(3, 3, CV_32F);
+
+  getRGBtoXYZMatrix(XYZWhitePoint, matXYZtoLab);
+  matXYZtoLab = matXYZtoLab.inv();
+
+  for (int i = 0; i < xyzImg.rows; i++){
+    for (int j = 0; j < xyzImg.cols; j++){
+      for (int k = 0; k < 3; k++){
+        bgrImg.at<Vec3f>(i, j).val[2 - k] = 
+          matXYZtoLab.at<float>(k, 0) * xyzImg.at<Vec3f>(i, j).val[0] +
+          matXYZtoLab.at<float>(k, 1) * xyzImg.at<Vec3f>(i, j).val[1] +
+          matXYZtoLab.at<float>(k, 2) * xyzImg.at<Vec3f>(i, j).val[2];
+        bgrImg.at<Vec3f>(i, j).val[2 - k] =
+          sRGBCompanding(bgrImg.at<Vec3f>(i, j).val[2 - k]);
+        bgrImg.at<Vec3f>(i, j).val[2 - k] =
+          clipImg(bgrImg.at<Vec3f>(i, j).val[2 - k], 0, 1);
+      }
+    }
+  }
+}
+
+
 void adaptXYZToNewWhitePoint(Mat& XYZWhitePoint, const Mat& BGRWhitePoint){
   Mat sRGBChromCoord = (Mat_<float>(3, 3) << 0.6400, 0.3000, 0.1500,
                                              0.3300, 0.6000, 0.0600, 	
@@ -332,89 +329,65 @@ void adaptXYZToNewWhitePoint(Mat& XYZWhitePoint, const Mat& BGRWhitePoint){
   Mat invsRGBChromCoord = sRGBChromCoord.inv();
 
   Mat XYZD65 = (Mat_<float>(1, 3) << 0.9642, 1.0000, 0.8249);
-  Mat tmpWhitePoint = Mat(BGRWhitePoint.rows, BGRWhitePoint.cols, CV_32FC3);
+  Mat xyWhitePoint = Mat(BGRWhitePoint.rows, BGRWhitePoint.cols, CV_32FC3);
   for (int k = 0; k < 3; k++){
-    tmpWhitePoint.at<Vec3f>(0, 0).val[k] = 
-      invsRGBChromCoord.at<float>(k, 0) * XYZD65.at<float>(0, 0) +
-      invsRGBChromCoord.at<float>(k, 1) * XYZD65.at<float>(0, 1) +
-      invsRGBChromCoord.at<float>(k, 2) * XYZD65.at<float>(0, 2);
+    xyWhitePoint.at<Vec3f>(0, 0).val[k] = product(XYZD65, invsRGBChromCoord, k);
   }
 
-  Mat T = (Mat_<float>(3, 3) << tmpWhitePoint.at<Vec3f>(0, 0).val[0], 0, 0,
-                                0, tmpWhitePoint.at<Vec3f>(0, 0).val[1], 0,
-                                0, 0, tmpWhitePoint.at<Vec3f>(0, 0).val[2]);
+  Mat T = (Mat_<float>(3, 3) << xyWhitePoint.at<Vec3f>(0, 0).val[0], 0, 0,
+                                0, xyWhitePoint.at<Vec3f>(0, 0).val[1], 0,
+                                0, 0, xyWhitePoint.at<Vec3f>(0, 0).val[2]);
 
   Mat tmpMat = Mat(3, 3, CV_32F);
   dotProduct(sRGBChromCoord, T, tmpMat);
-  Mat tmpBGRWhitePoint = Mat(BGRWhitePoint.rows, BGRWhitePoint.cols, CV_32FC3);
+  Mat linBGRWhitePoint = Mat(BGRWhitePoint.rows, BGRWhitePoint.cols, CV_32FC3);
 
-  // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   for (int i = 0; i < 3; i++){
-    tmpBGRWhitePoint.at<Vec3f>(0, 0).val[i] =
+    linBGRWhitePoint.at<Vec3f>(0, 0).val[i] =
       sRGBInverseCompanding(BGRWhitePoint.at<Vec3f>(0, 0).val[i]);
   }
-  std::cout << "BGR white" << BGRWhitePoint << std::endl;
   for (int k = 0; k < 3; k++){
-    std::cout << tmpBGRWhitePoint.at<Vec3f>(0, 0).val[2] << " " << tmpBGRWhitePoint.at<float>(0, 2) << std::endl;
-    XYZWhitePoint.at<Vec3f>(0, 0).val[k] = 
-      tmpBGRWhitePoint.at<Vec3f>(0, 0).val[2] * tmpMat.at<float>(k, 0) +
-      tmpBGRWhitePoint.at<Vec3f>(0, 0).val[1] * tmpMat.at<float>(k, 1) +
-      tmpBGRWhitePoint.at<Vec3f>(0, 0).val[0] * tmpMat.at<float>(k, 2);
+    XYZWhitePoint.at<Vec3f>(0, 0).val[k] =
+      linBGRWhitePoint.at<Vec3f>(0, 0).val[2] * tmpMat.at<float>(k, 0) +
+      linBGRWhitePoint.at<Vec3f>(0, 0).val[1] * tmpMat.at<float>(k, 1) +
+      linBGRWhitePoint.at<Vec3f>(0, 0).val[0] * tmpMat.at<float>(k, 2);
   }
 }
 
 
 void CAT(Mat& bgrImg, Mat& inpWhitePoint, const Mat& tarWhitePoint){
   Mat inpXYZWhitePoint = Mat(inpWhitePoint.rows, inpWhitePoint.cols, CV_32FC3);
-  Mat tmpWhitePoint = Mat(inpWhitePoint.rows, inpWhitePoint.cols, CV_32FC2);
   adaptXYZToNewWhitePoint(inpXYZWhitePoint, inpWhitePoint);
 
   Mat tarXYZWhitePoint = Mat(tarWhitePoint.rows, tarWhitePoint.cols, CV_32FC3);
-  //Mat tarXYWhitePoint = Mat(tarWhitePoint.rows, tarWhitePoint.cols, CV_32FC2);
   adaptXYZToNewWhitePoint(tarXYZWhitePoint, tarWhitePoint);
 
   Mat xyzImg = Mat(bgrImg.rows, bgrImg.cols, CV_32FC3);
   Mat resXYZImg = Mat(bgrImg.rows, bgrImg.cols, CV_32FC3);
   Mat XYZtoRGBMatrix = Mat(3, 3, CV_32F);
 
-  BGRtoXYZWhitePoint(bgrImg, inpXYZWhitePoint, xyzImg);
+  convertBGRtoXYZ(bgrImg, inpXYZWhitePoint, xyzImg);
 
-  Mat BSPositive = (Mat_<float>(3, 3) << 0.7328, 0.4296, -0.1624,
-                                         -0.7036, 1.6975, 0.0061,
-                                         0.0030, -0.0136, 0.9834);
+  Mat bradford = (Mat_<float>(3, 3) << 0.7328, 0.4296, -0.1624,
+                                      -0.7036, 1.6975, 0.0061,
+                                      0.0030, -0.0136, 0.9834);
 
-  float roI = BSPositive.at<float>(0, 0) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[0] +
-              BSPositive.at<float>(0, 1) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[1] +
-              BSPositive.at<float>(0, 2) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[2];
-  
-  float gamaI = BSPositive.at<float>(1, 0) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[0] +
-                BSPositive.at<float>(1, 1) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[1] +
-                BSPositive.at<float>(1, 2) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[2];
+  float roI = product(inpXYZWhitePoint, bradford, 0);
+  float gamaI = product(inpXYZWhitePoint, bradford, 1);
+  float betaI = product(inpXYZWhitePoint, bradford, 2);
 
-  float betaI = BSPositive.at<float>(2, 0) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[0] +
-                BSPositive.at<float>(2, 1) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[1] +
-                BSPositive.at<float>(2, 2) * inpXYZWhitePoint.at<Vec3f>(0, 0).val[2];
-
-  float roT = BSPositive.at<float>(0, 0) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[0] +
-              BSPositive.at<float>(0, 1) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[1] +
-              BSPositive.at<float>(0, 2) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[2];
-  
-  float gamaT = BSPositive.at<float>(1, 0) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[0] +
-                BSPositive.at<float>(1, 1) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[1] +
-                BSPositive.at<float>(1, 2) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[2];
-
-  float betaT = BSPositive.at<float>(2, 0) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[0] +
-                BSPositive.at<float>(2, 1) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[1] +
-                BSPositive.at<float>(2, 2) * tarXYZWhitePoint.at<Vec3f>(0, 0).val[2];
+  float roT = product(tarXYZWhitePoint, bradford, 0);
+  float gamaT = product(tarXYZWhitePoint, bradford, 1);
+  float betaT = product(tarXYZWhitePoint, bradford, 2);
 
   Mat diagMatrix = (Mat_<float>(3, 3) << roT / roI, 0, 0,
                                          0, gamaT / gamaI, 0,
                                          0, 0, betaT / betaI);
 
   Mat tmpMatrix = Mat(3, 3, CV_32F);
-  dotProduct(BSPositive.inv(), diagMatrix, tmpMatrix);
+  dotProduct(bradford.inv(), diagMatrix, tmpMatrix);
   Mat M = Mat(3, 3, CV_32F);
-  dotProduct(tmpMatrix, BSPositive, M);
+  dotProduct(tmpMatrix, bradford, M);
 
   for (int i = 0; i < bgrImg.rows; i++){
     for (int j = 0; j < bgrImg.cols; j++){
@@ -429,22 +402,61 @@ void CAT(Mat& bgrImg, Mat& inpWhitePoint, const Mat& tarWhitePoint){
     }
   }
 
-  //cvtColor(resXYZImg, bgrImg, CV_XYZ2BGR);
-  getRGBtoXYZMatrix(inpXYZWhitePoint, XYZtoRGBMatrix);
-  XYZtoRGBMatrix = XYZtoRGBMatrix.inv();
+  convertXYZtoBGR(resXYZImg, inpXYZWhitePoint, bgrImg);
+}
 
-  for (int i = 0; i < bgrImg.rows; i++){
-    for (int j = 0; j < bgrImg.cols; j++){
-      for (int k = 0; k < 3; k++){
-        bgrImg.at<Vec3f>(i, j).val[2 - k] = 
-          XYZtoRGBMatrix.at<float>(k, 0) * resXYZImg.at<Vec3f>(i, j).val[0] +
-          XYZtoRGBMatrix.at<float>(k, 1) * resXYZImg.at<Vec3f>(i, j).val[1] +
-          XYZtoRGBMatrix.at<float>(k, 2) * resXYZImg.at<Vec3f>(i, j).val[2];
-        bgrImg.at<Vec3f>(i, j).val[2 - k] =
-          sRGBCompanding(bgrImg.at<Vec3f>(i, j).val[2 - k]);
-        bgrImg.at<Vec3f>(i, j).val[2 - k] =
-          clipImg(bgrImg.at<Vec3f>(i, j).val[2 - k], 0, 1);
-      }
+
+void convertBGRToLab(Mat& bgrImg, Mat& BGRWhitePoint, Mat& labImg){
+  Mat xyzImg = Mat(bgrImg.rows, bgrImg.cols, CV_32FC3);
+  Mat XYZWhitePoint = Mat(1, 1, CV_32FC3);
+  adaptXYZToNewWhitePoint(XYZWhitePoint, BGRWhitePoint);
+  convertBGRtoXYZ(bgrImg, XYZWhitePoint, xyzImg);
+
+  for (int i = 0; i < xyzImg.rows; i++){
+    for (int j = 0; j < xyzImg.cols; j++){
+      float xr = xyzImg.at<Vec3f>(i, j).val[0] /
+                 XYZWhitePoint.at<Vec3f>(0, 0).val[0];
+      float yr = xyzImg.at<Vec3f>(i, j).val[1] /
+                 XYZWhitePoint.at<Vec3f>(0, 0).val[1];
+      float zr = xyzImg.at<Vec3f>(i, j).val[2] /
+                 XYZWhitePoint.at<Vec3f>(0, 0).val[2];
+      float fx = (xr > EPS) ? pow(xr, 1 / 3.0) : (K * xr + 16) / 116;
+      float fy = (yr > EPS) ? pow(yr, 1 / 3.0) : (K * yr + 16) / 116;
+      float fz = (zr > EPS) ? pow(zr, 1 / 3.0) : (K * zr + 16) / 116;
+
+      labImg.at<Vec3f>(i, j).val[0] = 116 * fy - 16;
+      labImg.at<Vec3f>(i, j).val[1] = 500 * (fx - fy);
+      labImg.at<Vec3f>(i, j).val[2] = 200 * (fy - fz);
     }
   }
+}
+
+
+void convertLabToBGR(const Mat& labImg, const Mat& BGRWhitePoint, Mat& bgrImg){
+  std::cout << labImg << std::endl;
+  Mat xyzImg = Mat(labImg.rows, labImg.cols, CV_32FC3);
+  Mat XYZWhitePoint = Mat(1, 1, CV_32FC3);
+  adaptXYZToNewWhitePoint(XYZWhitePoint, BGRWhitePoint);
+
+  for (int i = 0; i < labImg.rows; i++){
+    for (int j = 0; j < labImg.cols; j++){
+      float L = labImg.at<Vec3f>(i, j).val[0];
+      float a = labImg.at<Vec3f>(i, j).val[1];
+      float b = labImg.at<Vec3f>(i, j).val[2];
+
+      float fy = (L + 16) / 116;
+      float fx = a / 500 + fy;
+      float fz = fy - b / 200;
+
+      float xr = (pow(fx, 3) > EPS) ? pow(fx, 3) : (116 * fx - 16) / K;
+      float yr = (L > K * EPS) ? pow((L + 16) / 116, 3) : L / K;
+      float zr = (pow(fz, 3) > EPS) ? pow(fz, 3) : (116 * fz - 16) / K;
+
+      xyzImg.at<Vec3f>(i, j).val[0] = xr * XYZWhitePoint.at<Vec3f>(i, j).val[0];
+      xyzImg.at<Vec3f>(i, j).val[1] = yr * XYZWhitePoint.at<Vec3f>(i, j).val[1];
+      xyzImg.at<Vec3f>(i, j).val[2] = zr * XYZWhitePoint.at<Vec3f>(i, j).val[2];
+    }
+  }
+
+  convertXYZtoBGR(xyzImg, XYZWhitePoint, bgrImg);
 }

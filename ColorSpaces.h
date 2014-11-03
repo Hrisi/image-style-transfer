@@ -37,8 +37,8 @@ void LMStoBGR(const Mat& lmsImg, Mat& bgrImg);
 void BGRtoYUV(const Mat& bgrImg, Mat& yuvImg);
 
 
-bool computeBGRWhitePoint(const Mat& bgrImg, Mat& whitePoint,
-                          Mat& previuosWhitePoint);
+bool computeBGRGrayWhitePoint(const Mat& bgrImg, Mat& whitePoint,
+                              Mat& prevYUVWhitePoint);
 
 
 void XYZtoxy(const Mat& XYZImg, Mat& xyImg);
@@ -47,16 +47,28 @@ void XYZtoxy(const Mat& XYZImg, Mat& xyImg);
 void xytoXYZ(const Mat& xyImg, float maxLuminance, Mat& XYZImg);
 
 
-void getRGBtoXYZMatrix(const Mat& whitePoint, Mat& RGBtoXYZMatrix);
+float product(const Mat& whitePoint, const Mat& invMatrix, int k);
 
 
-void BGRtoXYZWhitePoint(Mat& bgrImg, const Mat& whitePoint, Mat& xyzImg);
+void getRGBtoXYZMatrix(Mat& whitePoint, Mat& RGBtoXYZMatrix);
+
+
+void convertBGRtoXYZ(Mat& bgrImg, Mat& whitePoint, Mat& xyzImg);
+
+
+void convertXYZtoBGR(const Mat& xyzImg, Mat& XYZWhitePoint, Mat& bgrImg);
 
 
 void adaptXYZToNewWhitePoint(Mat& XYZWhitePoint, const Mat& BGRWhitePoint);
 
 
 void CAT(Mat& bgrImg, Mat& inpWhitePoint, const Mat& tarWhitePoint);
+
+
+void convertBGRToLab(Mat& bgrImg, Mat& BGRWhitePoint, Mat& labImg);
+
+
+void convertLabToBGR(const Mat& labImg, const Mat& BGRWhitePoint, Mat& bgrImg);
 
 
 #endif
