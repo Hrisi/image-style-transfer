@@ -37,8 +37,8 @@ class EMTai{
     EMTai(int clsCnt);
     ~EMTai();
     void train(const Mat& samples, int& imgColInd);
-    Mat getMeans();
-    Mat getCovs();
+    void getMeans(Mat& means);
+    void getCovs(Mat& covs);
     float getProbs(int& x, int& y, int& clsCnt, int& imgColInd);
 };
 

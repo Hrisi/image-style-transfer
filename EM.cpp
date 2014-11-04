@@ -39,11 +39,13 @@ void EMTai::train(const Mat& samples, int& imgColInd){
   this->previousIter.smoothProbs = Mat(samples.rows, this->clsCnt, CV_64F);
 
   Mat labels = Mat(samples.rows, 1, CV_8U);
-  //std::cout << samples << std::endl;
+  std::cout << "before k-means" << std::endl;
   kmeans(samples, this->clsCnt, labels,
-         TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 10, 1.0), 3,
+         TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 10, 1.0), this->clsCnt,
          KMEANS_PP_CENTERS,
          this->currentIter.means);
+
+  
   std::cout << this->currentIter.means << std::endl;
 
   for (int i = 0; i < this->clsCnt; i++){
@@ -91,7 +93,7 @@ void EMTai::train(const Mat& samples, int& imgColInd){
     }
     converIndicator = 0;
 
-    if (step > 3){
+    if (step > 10){
       std::cout << "break" << std::endl;
       break;
     }
@@ -136,11 +138,8 @@ double EMTai::reestimateProb(const Mat& sample, const Mat& mean, const Mat& cov,
   double powTerm = 0.0;
 
   for (int i = 0; i < 3; i++){
-    if (cov.at<float>(0, i) > 0){
-      powTerm += (sample.at<float>(0, i) - mean.at<float>(0, i)) *
-                 (sample.at<float>(0, i) - mean.at<float>(0, i)) /
-                 (2 * cov.at<float>(0, i) * cov.at<float>(0, i));
-    }
+    powTerm += pow(sample.at<float>(0, i) - mean.at<float>(0, i), 2) /
+               (2 * pow(cov.at<float>(0, i), 2));
   }
 
   prob = exp(-powTerm);
@@ -157,6 +156,7 @@ void EMTai::normalizeProbs(int& rowInd, int& step){
     if (step){
       this->currentIter.probs.at<double>(rowInd, i) +=
         this->currentIter.smoothProbs.at<double>(rowInd, i);
+    //std::cout << this->currentIter.probs.at<double>(rowInd, i) << std::endl;
     }
   }
 }
@@ -182,8 +182,7 @@ float EMTai::reestimateCov(const Mat& probs, const Mat& samples, float& mean){
   double normFactor = 0;
 
   for (int i = 0; i < samples.rows; i++){
-    cov += probs.at<double>(i, 0) * (samples.at<float>(i, 0) - mean) *
-           (samples.at<float>(i, 0) - mean);
+    cov += probs.at<double>(i, 0) * pow(samples.at<float>(i, 0) - mean, 2);
     normFactor += probs.at<double>(i, 0);
   }
 
@@ -259,16 +258,24 @@ double EMTai::bilateralFilter(float& spatialGauss, const Mat& centerI,
 }
 
 
-Mat EMTai::getMeans(){
-  return this->currentIter.means;
+void EMTai::getMeans(Mat& means){
+  for (int i = 0; i < this->clsCnt; i++){
+    for (int j = 0; j < 3; j++){
+      means.at<float>(i, j) = this->currentIter.covs.at<float>(i, j);
+    }
+  }
 }
 
 
-Mat EMTai::getCovs(){
-  return this->currentIter.covs;
+void EMTai::getCovs(Mat& covs){
+  for (int i = 0; i < this->clsCnt; i++){
+    for (int j = 0; j < 3; j++){
+      covs.at<float>(i, j) = this->currentIter.covs.at<float>(i, j);
+    }
+  }
 }
 
 
 float EMTai::getProbs(int& x, int& y, int& clsCnt, int& imgColInd){
-  return this->currentIter.probs.at<float>(x * imgColInd + y, clsCnt);
+  return this->currentIter.probs.at<double>(x * imgColInd + y, clsCnt);
 }
