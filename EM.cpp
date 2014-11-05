@@ -6,9 +6,9 @@
 using namespace cv;
 
 #define NEIGHBOURHOOD_SIZE 7
-#define DELTA 0.1
-#define SPATIAL_DEV 7
-#define COLOR_DEV 7
+#define DELTA pow(10, -6)
+#define SPATIAL_DEV 1.5
+#define COLOR_DEV 2
 
 
 EMTai::EMTai(int clsCnt){
@@ -93,25 +93,20 @@ void EMTai::train(const Mat& samples, int& imgColInd){
     }
     converIndicator = 0;
 
-    if (step > 10){
-      std::cout << "break" << std::endl;
-      break;
-    }
-    /*  for (int i = 0; i < samples.rows; i++){
-        for (int k = 0; k < this->clsCnt; k++){
-          if (abs(this->previousIter.means.at<float>(i, k) -
-                  this->currentIter.means.at<float>(i, k)) < DELTA &&
-              abs(this->previousIter.covs.at<float>(i, k) -
-                  this->currentIter.covs.at<float>(i, k)) < DELTA){
-            converIndicator++;
-          }
+    for (int i = 0; i < samples.cols; i++){
+      for (int k = 0; k < this->clsCnt; k++){
+        if (sqrt(pow(this->previousIter.means.at<float>(k, i) -
+                     this->currentIter.means.at<float>(k, i), 2)) < DELTA &&
+            sqrt(pow(this->previousIter.covs.at<float>(k, i) -
+                this->currentIter.covs.at<float>(k, i), 2)) < DELTA){
+          converIndicator++;
         }
       }
-      if (converIndicator == samples.rows * this->clsCnt){
-        break;
-      }
     }
-    this->previousIter = this->currentIter; */
+    if (converIndicator == samples.cols * this->clsCnt){
+      break;
+    }
+    this->previousIter = this->currentIter;
     step++;
   }
 }
@@ -214,17 +209,12 @@ void EMTai::smooth(const Mat& samples, int& imgColInd){
       for (int j = -NEIGHBOURHOOD_SIZE / 2; j <= NEIGHBOURHOOD_SIZE / 2; j++){
         if ((i / imgColInd + j) > 0 && (i / imgColInd + j) < samples.rows / imgColInd){
           for (int h = -NEIGHBOURHOOD_SIZE / 2; h <= NEIGHBOURHOOD_SIZE / 2; h++){
-            if ((i % imgColInd + h) > 0 &&
-                (i % imgColInd + h) < imgColInd){
-             if ( i + j * imgColInd + h - 1 >= samples.rows)
-               std::cout << i / imgColInd + j << " " << i% imgColInd + h << std::endl;
-              firstComponent = 
-                spatialGauss[abs(h + NEIGHBOURHOOD_SIZE / 2)]
-                            [abs(j + NEIGHBOURHOOD_SIZE / 2)];
-              bilFilterRes = this->bilateralFilter(
-                firstComponent,
-                samples.row(i),
-                samples.row(i + j * imgColInd + h));
+            if ((i % imgColInd + h) > 0 && (i % imgColInd + h) < imgColInd){
+              firstComponent = spatialGauss[abs(h + NEIGHBOURHOOD_SIZE / 2)]
+                                           [abs(j + NEIGHBOURHOOD_SIZE / 2)];
+              bilFilterRes = this->bilateralFilter(firstComponent,
+                                                   samples.row(i),
+                                                   samples.row(i + j * imgColInd + h));
               this->currentIter.smoothProbs.at<double>(i, k) += bilFilterRes *
                 this->currentIter.probs.at<double>(i + j * imgColInd + h, k);
               this->currentIter.normSmoothFactor[k] +=
