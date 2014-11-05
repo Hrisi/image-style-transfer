@@ -5,7 +5,7 @@
 
 using namespace cv;
 
-#define NEIGHBOURHOOD_SIZE 7
+#define NEIGHBOUR_SIZE 7
 #define DELTA pow(10, -6)
 #define SPATIAL_DEV 1.5
 #define COLOR_DEV 2
@@ -27,7 +27,7 @@ EMTai::~EMTai(){
 }
 
 
-void EMTai::train(const Mat& samples, int& imgColInd){
+void EMTai::train(const Mat& samples, int& cols){
   this->currentIter.means = Mat(this->clsCnt, samples.cols, CV_32F);
   this->currentIter.covs = Mat(this->clsCnt, samples.cols, CV_32F);
   this->currentIter.probs = Mat(samples.rows, this->clsCnt, CV_64F);
@@ -39,76 +39,74 @@ void EMTai::train(const Mat& samples, int& imgColInd){
   this->previousIter.smoothProbs = Mat(samples.rows, this->clsCnt, CV_64F);
 
   Mat labels = Mat(samples.rows, 1, CV_8U);
-  std::cout << "before k-means" << std::endl;
   kmeans(samples, this->clsCnt, labels,
-         TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 10, 1.0), this->clsCnt,
+         TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 10, 1.0),
+         this->clsCnt,
          KMEANS_PP_CENTERS,
          this->currentIter.means);
 
-  
-  std::cout << this->currentIter.means << std::endl;
-
   for (int i = 0; i < this->clsCnt; i++){
     for (int j = 0; j < samples.cols; j++){
-      this->currentIter.covs.at<float>(i, j) =
-        this->initiateCovs(samples.col(j),
-                           this->currentIter.means.at<float>(i, j));
+      float cov = this->initiateCovs(samples.col(j),
+                                     this->currentIter.means.at<float>(i, j));
+      this->currentIter.covs.at<float>(i, j) = cov;
     }
   }
-  std::cout << this->currentIter.covs << std::endl;
 
   int step = 0;
-  int converIndicator;
 
   while(true){
-    std::cout << step << " new step" << std::endl;
-
     for (int i = 0; i < samples.rows; i++){
       this->currentIter.normFactor = 0;
       for (int k = 0; k < this->clsCnt; k++){
         this->currentIter.probs.at<double>(i, k) = this->reestimateProb(
             samples.row(i),
             this->currentIter.means.row(k),
-            this->currentIter.covs.row(k), step);
+            this->currentIter.covs.row(k));
       }
       this->normalizeProbs(i, step);
     }
-    std::cout << step << " new step" << std::endl;
-
-    this->smooth(samples, imgColInd);
-    std::cout << step << " new step" << std::endl;
+    this->smooth(samples, cols);
 
     for (int k = 0; k < this->clsCnt; k++){ 
       for (int j = 0; j < samples.cols; j++){
-        this->currentIter.means.at<float>(k, j) = this->reestimateMean(
-          this->currentIter.smoothProbs.col(k),
-          samples.col(j));
-        this->currentIter.covs.at<float>(k, j) = this->reestimateCov(
-          this->currentIter.smoothProbs.col(k),
-          samples.col(j),
-          this->currentIter.means.at<float>(k, j));
-        std::cout << this->currentIter.means << std::endl;
-        std::cout << this->currentIter.covs << std::endl;
+        float mean = this->reestimateMean(this->currentIter.smoothProbs.col(k),
+                                          samples.col(j));
+        float cov = this->reestimateCov(this->currentIter.smoothProbs.col(k),
+                                        samples.col(j),
+                                        this->currentIter.means.at<float>(k, j)); 
+        this->currentIter.means.at<float>(k, j) = mean;
+        this->currentIter.covs.at<float>(k, j) = cov;
       }
     }
-    converIndicator = 0;
+    if (isConverged(samples)){
+      break;
+    }
+    step++;
+  }
+}
+
+
+bool EMTai::isConverged(const Mat& samples){
+    int cnt = 0;
 
     for (int i = 0; i < samples.cols; i++){
       for (int k = 0; k < this->clsCnt; k++){
-        if (sqrt(pow(this->previousIter.means.at<float>(k, i) -
-                     this->currentIter.means.at<float>(k, i), 2)) < DELTA &&
-            sqrt(pow(this->previousIter.covs.at<float>(k, i) -
-                this->currentIter.covs.at<float>(k, i), 2)) < DELTA){
-          converIndicator++;
+        float meansDiff = sqrt(pow(this->previousIter.means.at<float>(k, i) -
+                                   this->currentIter.means.at<float>(k, i), 2));
+        float covsDIff = sqrt(pow(this->previousIter.covs.at<float>(k, i) -
+                                  this->currentIter.covs.at<float>(k, i), 2));
+        if (meansDiff < DELTA && covsDIff < DELTA){
+          cnt++;
         }
       }
     }
-    if (converIndicator == samples.cols * this->clsCnt){
-      break;
+    if (cnt == samples.cols * this->clsCnt){
+      return true;
     }
     this->previousIter = this->currentIter;
-    step++;
-  }
+
+    return false;
 }
 
 
@@ -127,14 +125,14 @@ float EMTai::initiateCovs(const Mat& samples, float& mean){
 }
 
 
-double EMTai::reestimateProb(const Mat& sample, const Mat& mean, const Mat& cov,
-                             int& step){
+double EMTai::reestimateProb(const Mat& sample, const Mat& mean, const Mat& cov){
   double prob;
   double powTerm = 0.0;
 
   for (int i = 0; i < 3; i++){
-    powTerm += pow(sample.at<float>(0, i) - mean.at<float>(0, i), 2) /
-               (2 * pow(cov.at<float>(0, i), 2));
+    float nominator = pow(sample.at<float>(0, i) - mean.at<float>(0, i), 2);
+    float denominator = 2 * pow(cov.at<float>(0, i), 2);
+    powTerm += nominator / denominator;
   }
 
   prob = exp(-powTerm);
@@ -146,12 +144,10 @@ double EMTai::reestimateProb(const Mat& sample, const Mat& mean, const Mat& cov,
 
 void EMTai::normalizeProbs(int& rowInd, int& step){
   for (int i = 0; i < this->clsCnt; i++){
-    this->currentIter.probs.at<double>(rowInd, i) /=
-      this->currentIter.normFactor;
+    this->currentIter.probs.at<double>(rowInd, i) /= this->currentIter.normFactor;
     if (step){
       this->currentIter.probs.at<double>(rowInd, i) +=
         this->currentIter.smoothProbs.at<double>(rowInd, i);
-    //std::cout << this->currentIter.probs.at<double>(rowInd, i) << std::endl;
     }
   }
 }
@@ -188,35 +184,40 @@ float EMTai::reestimateCov(const Mat& probs, const Mat& samples, float& mean){
 }
 
 
-void EMTai::smooth(const Mat& samples, int& imgColInd){
+void EMTai::smooth(const Mat& samples, int& cols){
   double bilFilterRes;
   float firstComponent;
-  float spatialGauss[NEIGHBOURHOOD_SIZE][NEIGHBOURHOOD_SIZE];
+  float spatialGauss[NEIGHBOUR_SIZE][NEIGHBOUR_SIZE];
   
   for (int k = 0; k < this->clsCnt; k++){
     this->currentIter.normSmoothFactor[k] = 0;
   }
 
   // initialize first component of BilFilter
-  for (int i = 0; i < NEIGHBOURHOOD_SIZE; i++){
-    for (int j = 0; j < NEIGHBOURHOOD_SIZE; j++){
+  for (int i = 0; i < NEIGHBOUR_SIZE; i++){
+    for (int j = 0; j < NEIGHBOUR_SIZE; j++){
       spatialGauss[i][j] = exp(-(i * i + j * j) / SPATIAL_DEV);
     }
   }
 
   for (int k = 0; k < this->clsCnt; k++){
     for (int i = 0; i < samples.rows; i++){
-      for (int j = -NEIGHBOURHOOD_SIZE / 2; j <= NEIGHBOURHOOD_SIZE / 2; j++){
-        if ((i / imgColInd + j) > 0 && (i / imgColInd + j) < samples.rows / imgColInd){
-          for (int h = -NEIGHBOURHOOD_SIZE / 2; h <= NEIGHBOURHOOD_SIZE / 2; h++){
-            if ((i % imgColInd + h) > 0 && (i % imgColInd + h) < imgColInd){
-              firstComponent = spatialGauss[abs(h + NEIGHBOURHOOD_SIZE / 2)]
-                                           [abs(j + NEIGHBOURHOOD_SIZE / 2)];
+      for (int j = -NEIGHBOUR_SIZE / 2; j <= NEIGHBOUR_SIZE / 2; j++){
+        int neigbourRow = i / cols + j;
+        int samplesCols = samples.rows / cols;
+        if (neigbourRow > 0 && neigbourRow < samplesCols){
+          for (int h = -NEIGHBOUR_SIZE / 2; h <= NEIGHBOUR_SIZE / 2; h++){
+            int neighCol = i % cols + h;
+            if (neighCol > 0 && neighCol < cols){
+              int neighSamplesInd = i + j * cols + h;
+              firstComponent = spatialGauss[abs(h + NEIGHBOUR_SIZE / 2)]
+                                           [abs(j + NEIGHBOUR_SIZE / 2)];
               bilFilterRes = this->bilateralFilter(firstComponent,
                                                    samples.row(i),
-                                                   samples.row(i + j * imgColInd + h));
-              this->currentIter.smoothProbs.at<double>(i, k) += bilFilterRes *
-                this->currentIter.probs.at<double>(i + j * imgColInd + h, k);
+                                                   samples.row(neighSamplesInd));
+              float prob = this->currentIter.probs.at<double>(neighSamplesInd, k); 
+              this->currentIter.smoothProbs.at<double>(i, k) += 
+                bilFilterRes * prob;
               this->currentIter.normSmoothFactor[k] +=
                 this->currentIter.smoothProbs.at<double>(i, k);
             }
@@ -234,15 +235,12 @@ void EMTai::smooth(const Mat& samples, int& imgColInd){
 }
 
 
-double EMTai::bilateralFilter(float& spatialGauss, const Mat& centerI,
-                              const Mat& neighI){
-  double colorGauss = exp(-((centerI.at<float>(0, 0) - neighI.at<float>(0, 0)) *
-                            (centerI.at<float>(0, 0) - neighI.at<float>(0, 0)) +
-                            (centerI.at<float>(0, 1) - neighI.at<float>(0, 1)) *
-                            (centerI.at<float>(0, 1) - neighI.at<float>(0, 1)) +
-                            (centerI.at<float>(0, 2) - neighI.at<float>(0, 2)) *
-                            (centerI.at<float>(0, 2) - neighI.at<float>(0, 2))) /
-                          COLOR_DEV);
+float EMTai::bilateralFilter(float& spatialGauss, const Mat& centerI,
+                             const Mat& neighI){
+  float distL = pow(centerI.at<float>(0, 0) - neighI.at<float>(0, 0), 2);
+  float distA = pow(centerI.at<float>(0, 1) - neighI.at<float>(0, 1), 2);
+  float distB = pow(centerI.at<float>(0, 2) - neighI.at<float>(0, 2), 2);
+  float colorGauss = exp(-(distL + distA + distB) / COLOR_DEV);
 
   return spatialGauss * colorGauss;
 }
@@ -266,6 +264,6 @@ void EMTai::getCovs(Mat& covs){
 }
 
 
-float EMTai::getProbs(int& x, int& y, int& clsCnt, int& imgColInd){
-  return this->currentIter.probs.at<double>(x * imgColInd + y, clsCnt);
+float EMTai::getProbs(int& x, int& y, int& clsCnt, int& cols){
+  return this->currentIter.probs.at<double>(x * cols + y, clsCnt);
 }

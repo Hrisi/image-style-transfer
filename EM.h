@@ -24,22 +24,22 @@ class EMTai{
     int clsCnt;
     EMIterationState currentIter;
     EMIterationState previousIter;
-    double reestimateProb(const Mat& sample, const Mat& mean, const Mat& cov,
-                          int& step);
+    bool isConverged(const Mat& samples);
+    double reestimateProb(const Mat& sample, const Mat& mean, const Mat& cov);
     void normalizeProbs(int& rowInd, int& step);
     void smooth(const Mat& samples, int& imgColInd);
     float reestimateMean(const Mat& probs, const Mat& samples);
     float reestimateCov(const Mat& probs, const Mat& samples, float& mean);
     float initiateCovs(const Mat& samples, float& mean);
-    double bilateralFilter(float& spatialGauss, const Mat& centerI,
-                           const Mat& neighI);
+    float bilateralFilter(float& spatialGauss, const Mat& centerI,
+                          const Mat& neighI);
   public:
     EMTai(int clsCnt);
     ~EMTai();
-    void train(const Mat& samples, int& imgColInd);
+    void train(const Mat& samples, int& cols);
     void getMeans(Mat& means);
     void getCovs(Mat& covs);
-    float getProbs(int& x, int& y, int& clsCnt, int& imgColInd);
+    float getProbs(int& x, int& y, int& clsCnt, int& cols);
 };
 
 
