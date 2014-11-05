@@ -10,24 +10,48 @@
 using namespace cv;
 
 
-void mappingFunction(const Mat& inpMean, const Mat& tarMean, int* mappingSeq){
-  float distance;
-
+void mappingFunction(const Mat& inpMean, const Mat& tarMean, int* map){
+  float dist;
   for (int i = 0; i < CLS_NMB; i++){
-    distance = abs(inpMean.at<float>(0, i) - tarMean.at<float>(0, 0));
-    mappingSeq[i] = 0;
-    for (int j = 0; j < CLS_NMB; j++){
-      if (abs(inpMean.at<float>(0, i) - tarMean.at<float>(0, j)) < distance){
-        distance = abs(inpMean.at<float>(0, i) - tarMean.at<float>(0, j));
-        mappingSeq[i] = j;
+    dist = sqrt(pow(inpMean.at<float>(i, 0) - tarMean.at<float>(0, 0), 2));
+    map[i] = 0;
+    for (int j = 0; j < 3; j++){
+      float newDist = sqrt(pow(inpMean.at<float>(i, 0) -
+                               tarMean.at<float>(j, 0), 2));
+      if (newDist < dist){
+        dist = newDist;
+        map[i] = j;
       }
-    std::cout << mappingSeq[i] << std::endl;
+    std::cout << map[i] << std::endl;
     }
   }
-  mappingSeq[0] = 0;
-  mappingSeq[1] = 1;
-  mappingSeq[2] = 2;
 }
+
+
+void normalize(const Mat& img, Mat& imgNorm){
+  for (int i = 0; i < img.rows; i++){
+    for (int j = 0; j < img.cols; j++){
+      for (int k = 0; k < 3; k++){
+        imgNorm.at<Vec3f>(i, j).val[k] =
+          img.at<Vec3b>(i, j).val[k] / 255.0;
+      }
+    }
+  }
+}
+
+
+void reshape(const Mat& img, Mat& samples){
+  int row = 0;
+  for (int i = 0; i < img.rows; i++){
+    for (int j = 0; j < img.cols; j++){
+      for (int k = 0; k < 3; k++){
+        samples.at<float>(row, k) = img.at<Vec3f>(i, j).val[k];
+      }
+      row++;
+    }
+  }
+}
+
 
 int main(int argc, char** argv){
   // 3 arguments: file name, input image, target image, result image
@@ -44,75 +68,30 @@ int main(int argc, char** argv){
   Mat inpImgNorm = Mat(inpImg.rows, inpImg.cols, CV_32FC3);
   Mat tarImgNorm = Mat(tarImg.rows, tarImg.cols, CV_32FC3);
 
-  for (int i = 0; i < inpImg.rows; i++){
-    for (int j = 0; j < inpImg.cols; j++){
-      for (int k = 0; k < 3; k++){
-        inpImgNorm.at<Vec3f>(i, j).val[k] =
-          inpImg.at<Vec3b>(i, j).val[k] / 255.0;
-      }
-    }
-  }
-
-  for (int i = 0; i < tarImg.rows; i++){
-    for (int j = 0; j < tarImg.cols; j++){
-      for (int k = 0; k < 3; k++){
-        tarImgNorm.at<Vec3f>(i, j).val[k] =
-          tarImg.at<Vec3b>(i, j).val[k] / 255.0;
-      }
-    }
-  }
+  normalize(inpImg, inpImgNorm);
+  normalize(tarImg, tarImgNorm);
 
   Mat inpImgLab = Mat(inpImg.rows, inpImg.cols, CV_32FC3);
   Mat tarImgLab = Mat(tarImg.rows, tarImg.cols, CV_32FC3);
-  Mat inpLmsImg = Mat(inpImg.rows, inpImg.cols, CV_32FC3);
-  Mat tarLmsImg = Mat(tarImg.rows, tarImg.cols, CV_32FC3);
+  Mat inpImgLms = Mat(inpImg.rows, inpImg.cols, CV_32FC3);
+  Mat tarImgLms = Mat(tarImg.rows, tarImg.cols, CV_32FC3);
 
-  Mat newValues = Mat::zeros(inpImg.rows, inpImg.cols, CV_32FC3);
-
-  convertBGRtoLMS(inpImgNorm, inpLmsImg);
-  std::cout << "after bgr" << std::endl;
-  convertLMStoLab(inpLmsImg, inpImgLab);
-  std::cout << "after lms" << std::endl;
-  convertBGRtoLMS(tarImgNorm, tarLmsImg);
-  std::cout << "after lab" << std::endl;
-  convertLMStoLab(tarLmsImg, tarImgLab);
+  convertBGRtoLMS(inpImgNorm, inpImgLms);
+  convertLMStoLab(inpImgLms, inpImgLab);
+  convertBGRtoLMS(tarImgNorm, tarImgLms);
+  convertLMStoLab(tarImgLms, tarImgLab);
 
   EMTai inpClusters = EMTai(CLS_NMB);
   EMTai tarClusters = EMTai(CLS_NMB);
-  std::cout << "after em" << std::endl;
 
   Mat inpSamples = Mat(inpImgLab.rows * inpImgLab.cols, 3, CV_32F);
   Mat tarSamples = Mat(tarImgLab.rows * tarImgLab.cols, 3, CV_32F);
-  std::cout << "after em" << std::endl;
 
-  int rowInd = 0;
-  for (int i = 0; i < inpImgLab.rows; i++){
-    for (int j = 0; j < inpImgLab.cols; j++){
-      for (int k = 0; k < 3; k++){
-        inpSamples.at<float>(rowInd, k) = inpImgLab.at<Vec3f>(i, j).val[k];
-      }
-      rowInd++;
-    }
-  }
-  std::cout << "here" << std::endl;
-
-  rowInd = 0;
-  for (int i = 0; i < tarImgLab.rows; i++){
-    for (int j = 0; j < tarImgLab.cols; j++){
-      for (int k = 0; k < 3; k++){
-        tarSamples.at<float>(rowInd, k) = tarImgLab.at<Vec3f>(i, j).val[k];
-        //std::cout << tarImgLab.at<Vec3f>(i, j).val[k] << std::endl;
-      }
-      rowInd++;
-    }
-  }
-  std::cout << tarImgLab.at<Vec3f>(20, 54).val[1] << std::endl;
+  reshape(inpImgLab, inpSamples);
+  reshape(tarImgLab, tarSamples);
 
   tarClusters.train(tarSamples, tarImgLab.cols);
   inpClusters.train(inpSamples, inpImgLab.cols);
-  std::cout << "end of train" << std::endl;
-  
-  std::cout << "after train" << std::endl;
 
   Mat inpMean = Mat(CLS_NMB, 3, CV_32F);
   inpClusters.getMeans(inpMean);
@@ -122,38 +101,30 @@ int main(int argc, char** argv){
   inpClusters.getCovs(inpCov);
   Mat tarCov = Mat(CLS_NMB, 3, CV_32F);
   tarClusters.getCovs(tarCov);
-  float tranfRes;
-  std::cout << tarMean << " tarMeans" << std::endl;
-  std::cout << inpMean << " inpMeans" << std::endl;
-  std::cout << inpCov << " inpCov" << std::endl;
-  std::cout << tarCov << " tarCov" << std::endl;
 
-  int* mappingSeq = new int[CLS_NMB];
-  mappingFunction(inpMean, tarMean, mappingSeq);
-  std::cout << mappingSeq[0] << mappingSeq[1] << mappingSeq[2] << std::endl;
+  int* map = new int[CLS_NMB];
+  mappingFunction(inpMean, tarMean, map);
+  Mat imgAfterTransf = Mat::zeros(inpImg.rows, inpImg.cols, CV_32FC3);
 
   for (int k = 0; k < 3; k++){
     for (int i = 0; i < inpImgLab.rows; i++){
       for (int j = 0; j < inpImgLab.cols; j++){
         for (int h = 0; h < CLS_NMB; h++){
-          //inpImgLab.at<Vec3f>(i, j).val[k] =
-          //  clipImg(inpImgLab.at<Vec3f>(i, j).val[k], 0, 1);
-          tranfRes = applyReinhard(inpImgLab.at<Vec3f>(i, j).val[k],
-                                   inpMean.at<float>(h, k),
-                                   tarMean.at<float>(mappingSeq[h], k),
-                                   inpCov.at<float>(h, k),
-                                   tarCov.at<float>(mappingSeq[h], k));
-
-          newValues.at<Vec3f>(i, j).val[k] += 
-            inpClusters.getProbs(i, j, h, inpImgLab.cols) * tranfRes;
-          //std::cout << newValues.at<Vec3f>(i, j).val[k] << std::endl;
+          float newValue = applyReinhard(
+              inpImgLab.at<Vec3f>(i, j).val[k],
+              inpMean.at<float>(h, k),
+              tarMean.at<float>(map[h], k),
+              inpCov.at<float>(h, k),
+              tarCov.at<float>(map[h], k));
+          float prob = inpClusters.getProbs(i, j, h, inpImgLab.cols);
+          imgAfterTransf.at<Vec3f>(i, j).val[k] += prob * newValue;
         }
       }
     }
   }
 
-  convertLabtoLMS(newValues, inpLmsImg);
-  convertLMStoBGR(inpLmsImg, inpImgNorm);
+  convertLabtoLMS(imgAfterTransf, inpImgLms);
+  convertLMStoBGR(inpImgLms, inpImgNorm);
 
   for (int i = 0; i < inpImg.rows; i++){
     for (int j = 0; j < inpImg.cols; j++){
