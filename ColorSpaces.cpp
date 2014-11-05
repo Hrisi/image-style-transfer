@@ -63,14 +63,17 @@ void convertBGRtoLMS(Mat& bgrImg, Mat& lmsImg){
       float g = bgrImg.at<Vec3f>(i, j).val[1];
       float b = bgrImg.at<Vec3f>(i, j).val[0];
 
-      bgrImg.at<Vec3f>(i, j).val[0] = sRGBInverseCompanding(b);
-      bgrImg.at<Vec3f>(i, j).val[1] = sRGBInverseCompanding(g);
-      bgrImg.at<Vec3f>(i, j).val[2] = sRGBInverseCompanding(r);
+      b = sRGBInverseCompanding(b);
+      g = sRGBInverseCompanding(g);
+      r = sRGBInverseCompanding(r);
 
       for (int k = 0; k < 3; k++){
-        lmsImg.at<Vec3f>(i, j).val[k] = log10(matrix.at<float>(k, 0) * r +
-                                              matrix.at<float>(k, 1) * g +
-                                              matrix.at<float>(k, 2) * b);
+        lmsImg.at<Vec3f>(i, j).val[k] = matrix.at<float>(k, 0) * r +
+                                        matrix.at<float>(k, 1) * g +
+                                        matrix.at<float>(k, 2) * b;
+        //lmsImg.at<Vec3f>(i, j).val[k] =
+        //  clipImg(lmsImg.at<Vec3f>(i, j).val[k], 0, 1);
+        lmsImg.at<Vec3f>(i, j).val[k] = log10(lmsImg.at<Vec3f>(i, j).val[k]);
       }
     }
   }
@@ -86,7 +89,6 @@ void convertLMStoLab(const Mat& lmsImg, Mat& labImg){
                                     1, -1, 0);
   Mat matrix = Mat(3, 3, CV_32F);
   dotProduct(base1, base2, matrix);
-  std::cout << matrix << std::endl;
 
   conversion(lmsImg, labImg, matrix, lmsImg.rows, lmsImg.cols);
 }
@@ -106,9 +108,15 @@ void convertLabtoLMS(const Mat& labImg, Mat& lmsImg){
   conversion(labImg, lmsImg, matrix, lmsImg.rows, lmsImg.cols);
 
   for (int i = 0; i < lmsImg.rows; i++){
-    for (int j = 0; i < lmsImg.cols; i++){
+    for (int j = 0; j < lmsImg.cols; j++){
       for (int k = 0; k < 3; k++){
-        lmsImg.at<Vec3f>(i, j).val[k] = pow(lmsImg.at<Vec3f>(i, j).val[k], 10);
+        //lmsImg.at<Vec3f>(i, j).val[k] =
+        //  clipImg(lmsImg.at<Vec3f>(i, j).val[k], 0, 1);
+        lmsImg.at<Vec3f>(i, j).val[k] = pow(10, lmsImg.at<Vec3f>(i, j).val[k]);
+        if (lmsImg.at<Vec3f>(i, j).val[k] < 0){
+          std::cout << "!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+        }
+        //std::cout << lmsImg.at<Vec3f>(i, j).val[k] << std::endl;
       }
     }
   }
@@ -126,13 +134,16 @@ void convertLMStoBGR(const Mat& lmsImg, Mat& bgrImg){
       float m = lmsImg.at<Vec3f>(i, j).val[1];
       float s = lmsImg.at<Vec3f>(i, j).val[2];
 
+      //std::cout << l  << " " << lmsImg.at<Vec3f>(i, j).val[0] << " " << m << " " << s << std::endl;
       for (int k = 0; k < 3; k++){
         bgrImg.at<Vec3f>(i, j).val[2 - k] = matrix.at<float>(k, 0) * l +
                                             matrix.at<float>(k, 1) * m +
                                             matrix.at<float>(k, 2) * s;
         bgrImg.at<Vec3f>(i, j).val[2 - k] =
           sRGBCompanding(bgrImg.at<Vec3f>(i, j).val[2 - k]);
-        //std::cout << bgrImg << std::cout;
+        //std::cout << bgrImg.at<Vec3f>(i, j).val[k] << std::endl;
+
+        //std::cout << bgrImg.at<Vec3f>(i, j).val[2 - k] << std::endl;
         //bgrImg.at<Vec3f>(i, j)[2 - k] =
         //  clipImg(bgrImg.at<Vec3f>(i, j).val[2 - k], 0, 1);
       }
