@@ -5,19 +5,19 @@
 #include <ColorSpaces.h>
 #include <EM.h>
 
-#define CLS_NMB 3
+#define INP_CLS_NMB 2
+#define TAR_CLS_NMB 2
 
 using namespace cv;
 
 
 void mappingFunction(const Mat& inpMean, const Mat& tarMean, int* map){
   float dist;
-  for (int i = 0; i < CLS_NMB; i++){
-    dist = sqrt(pow(inpMean.at<float>(i, 0) - tarMean.at<float>(0, 0), 2));
+  for (int i = 0; i < INP_CLS_NMB; i++){
+    dist = pow(inpMean.at<float>(i, 0) - tarMean.at<float>(0, 0), 2);
     map[i] = 0;
-    for (int j = 0; j < 3; j++){
-      float newDist = sqrt(pow(inpMean.at<float>(i, 0) -
-                               tarMean.at<float>(j, 0), 2));
+    for (int j = 0; j < TAR_CLS_NMB; j++){
+      float newDist = pow(inpMean.at<float>(i, 0) - tarMean.at<float>(j, 0), 2);
       if (newDist < dist){
         dist = newDist;
         map[i] = j;
@@ -33,7 +33,7 @@ void normalize(const Mat& img, Mat& imgNorm){
     for (int j = 0; j < img.cols; j++){
       for (int k = 0; k < 3; k++){
         imgNorm.at<Vec3f>(i, j).val[k] =
-          img.at<Vec3b>(i, j).val[k] / 255.0;
+          img.at<Vec3b>(i, j).val[k];
       }
     }
   }
@@ -81,8 +81,8 @@ int main(int argc, char** argv){
   convertBGRtoLMS(tarImgNorm, tarImgLms);
   convertLMStoLab(tarImgLms, tarImgLab);
 
-  EMTai inpClusters = EMTai(CLS_NMB);
-  EMTai tarClusters = EMTai(CLS_NMB);
+  EMTai tarClusters = EMTai(TAR_CLS_NMB);
+  EMTai inpClusters = EMTai(INP_CLS_NMB);
 
   Mat inpSamples = Mat(inpImgLab.rows * inpImgLab.cols, 3, CV_32F);
   Mat tarSamples = Mat(tarImgLab.rows * tarImgLab.cols, 3, CV_32F);
@@ -93,23 +93,23 @@ int main(int argc, char** argv){
   tarClusters.train(tarSamples, tarImgLab.cols);
   inpClusters.train(inpSamples, inpImgLab.cols);
 
-  Mat inpMean = Mat(CLS_NMB, 3, CV_32F);
+  Mat inpMean = Mat(INP_CLS_NMB, 3, CV_32F);
   inpClusters.getMeans(inpMean);
-  Mat tarMean = Mat(CLS_NMB, 3, CV_32F);
+  Mat tarMean = Mat(TAR_CLS_NMB, 3, CV_32F);
   tarClusters.getMeans(tarMean);
-  Mat inpCov = Mat(CLS_NMB, 3, CV_32F);
+  Mat inpCov = Mat(INP_CLS_NMB, 3, CV_32F);
   inpClusters.getCovs(inpCov);
-  Mat tarCov = Mat(CLS_NMB, 3, CV_32F);
+  Mat tarCov = Mat(TAR_CLS_NMB, 3, CV_32F);
   tarClusters.getCovs(tarCov);
 
-  int* map = new int[CLS_NMB];
+  int* map = new int[INP_CLS_NMB];
   mappingFunction(inpMean, tarMean, map);
   Mat imgAfterTransf = Mat::zeros(inpImg.rows, inpImg.cols, CV_32FC3);
 
   for (int k = 0; k < 3; k++){
     for (int i = 0; i < inpImgLab.rows; i++){
       for (int j = 0; j < inpImgLab.cols; j++){
-        for (int h = 0; h < CLS_NMB; h++){
+        for (int h = 0; h < INP_CLS_NMB; h++){
           float newValue = applyReinhard(
               inpImgLab.at<Vec3f>(i, j).val[k],
               inpMean.at<float>(h, k),
@@ -126,13 +126,13 @@ int main(int argc, char** argv){
   convertLabtoLMS(imgAfterTransf, inpImgLms);
   convertLMStoBGR(inpImgLms, inpImgNorm);
 
-  for (int i = 0; i < inpImg.rows; i++){
+  /*for (int i = 0; i < inpImg.rows; i++){
     for (int j = 0; j < inpImg.cols; j++){
       for (int k = 0; k < 3; k++){
         inpImgNorm.at<Vec3f>(i, j).val[k] *= 255.0;
       }
     }
-  }
+  }*/
 
   namedWindow("Display Image", WINDOW_AUTOSIZE );
   imshow("Display Image", inpImgNorm);

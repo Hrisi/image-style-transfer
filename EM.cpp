@@ -40,8 +40,7 @@ void EMTai::train(const Mat& samples, int& cols){
 
   Mat labels = Mat(samples.rows, 1, CV_8U);
   kmeans(samples, this->clsCnt, labels,
-         TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 10, 1.0),
-         this->clsCnt,
+         TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 300, 0.1), 5,
          KMEANS_PP_CENTERS,
          this->currentIter.means);
 
@@ -79,10 +78,13 @@ void EMTai::train(const Mat& samples, int& cols){
         this->currentIter.covs.at<float>(k, j) = cov;
       }
     }
-    if (isConverged(samples)){
+    if (isConverged(samples) || step > 20){
       break;
     }
+    this->previousIter = this->currentIter;
+
     step++;
+    std::cout << step << std::endl;
   }
 }
 
@@ -104,7 +106,6 @@ bool EMTai::isConverged(const Mat& samples){
     if (cnt == samples.cols * this->clsCnt){
       return true;
     }
-    this->previousIter = this->currentIter;
 
     return false;
 }
